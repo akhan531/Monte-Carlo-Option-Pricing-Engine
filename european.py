@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.stats import norm
 
 # Uses Geometric Brownian Motion for Monte Carlo Simulation 
@@ -18,6 +19,31 @@ def monte_carlo(S0, r, sigma, T, K, N, option_type):
     upper = profit+1.96*SE
 
     return profit, lower, upper
+
+# Uses antithetic variates for variance reduction
+def monte_carlo_antithetic(S0, r, sigma, T, K, N, option_type):
+    Z = np.random.normal(0, 1, N)
+    ST1 = S0 * np.exp((r - 0.5*sigma**2)*T + sigma*np.sqrt(T)*Z)
+    ST2 = S0 * np.exp((r - 0.5*sigma**2)*T - sigma*np.sqrt(T)*Z)
+
+    if option_type == 'call':
+        p1 = np.maximum(ST1 - K, 0)
+        p2 = np.maximum(ST2 - K, 0)
+    if option_type == 'put':
+        p1 = np.maximum(K - ST1, 0)
+        p2 = np.maximum(K - ST2, 0)
+
+    payoffs = (p1+p2)/2
+    profit = np.mean(payoffs) * np.exp(-r*T)
+
+    SE = np.std(payoffs, ddof=1) / np.sqrt(N)
+    lower = profit-1.96*SE
+    upper = profit+1.96*SE
+
+    return profit, lower, upper
+
+
+
 
 # Uses closed-form formula of Black-Scholes for european options 
 def black_scholes(S0, r, sigma, T, K, option_type):
