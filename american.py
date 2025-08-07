@@ -1,9 +1,10 @@
 import numpy as np
 from scipy.stats import norm
 import xgboost as xgb
+from sklearn.neural_network import MLPRegressor
 
-# Uses Geometric Brownian Motion for Monte Carlo Simulation 
-def longstaff_schwartz (S0, r, sigma, T, K, n_trials, n_timesteps, option_type):
+# Uses machine learning for regression and optimal stopping
+def longstaff_schwartz (S0, r, sigma, T, K, n_trials, n_timesteps, option_type, ml_model):
     S = np.zeros((n_trials, n_timesteps))
     S[:,0] = S0
     rng = np.random.default_rng(42)
@@ -26,7 +27,16 @@ def longstaff_schwartz (S0, r, sigma, T, K, n_trials, n_timesteps, option_type):
         otm_indices = np.where(S[:,t] <= 0)
         X = S[itm_indices, t].reshape(-1, 1)
         y = payoffs[itm_indices,t+1] * np.exp(-r*dt)
-        model = xgb.XGBRegressor()
+        if ml_model == "xgboost":
+            model = xgb.XGBRegressor()
+        if ml_model == "mlp":
+            model = MLPRegressor(
+                hidden_layer_sizes=(64, 64),  
+                activation='relu',
+                solver='adam',
+                max_iter=500,
+                random_state=42
+            )
         model.fit(X, y)
         future_val = model.predict(X).flatten()
         if option_type == 'call':
