@@ -9,7 +9,7 @@ def monte_carlo(S0, r, sigma, T, K, N, option_type):
 
     if option_type == 'call':
         payoffs = np.maximum(ST - K, 0)
-    if option_type == 'put':
+    elif option_type == 'put':
         payoffs = np.maximum(K - ST, 0)
 
     profit = np.mean(payoffs) * np.exp(-r*T)
@@ -29,7 +29,7 @@ def monte_carlo_antithetic(S0, r, sigma, T, K, N, option_type):
     if option_type == 'call':
         p1 = np.maximum(ST1 - K, 0)
         p2 = np.maximum(ST2 - K, 0)
-    if option_type == 'put':
+    elif option_type == 'put':
         p1 = np.maximum(K - ST1, 0)
         p2 = np.maximum(K - ST2, 0)
 
@@ -52,6 +52,6 @@ def black_scholes(S0, r, sigma, T, K, option_type):
     if option_type == 'call':
         C = S0*norm.cdf(d1) - K*np.exp(-r*T)*norm.cdf(d2)
         return C
-    if option_type == 'put':
+    elif option_type == 'put':
         P = K*np.exp(-r*T)*norm.cdf(-d2) - S0*norm.cdf(-d1)
         return P
