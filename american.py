@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.stats import norm
+from scipy import stats
 import xgboost as xgb
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
@@ -8,6 +8,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.neural_network import MLPRegressor
 from itertools import product
 import pandas as pd
+import matplotlib.pyplot as plt
+
 
 # Uses machine learning for regression and optimal stopping
 def longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, ml_model):
@@ -145,7 +147,6 @@ def binomial_tree(S0, r, sigma, T, K, n_timesteps, option_type):
 
 
 S0 = 100
-r = 0.05
 n_trials = 100
 n_timesteps = 100
 option_type = 'call'
@@ -153,21 +154,44 @@ option_type = 'call'
 test_T = [0.25, 0.5, 1]
 test_sigma = [0.15, 0.25, 0.4]
 test_moneyness = [-10, 0, 10]
+test_r = [0.01,0.03,0.05]
 test_models = ['poly', 'random forest', 'xgboost', 'mlp']
 
-parameters = list(product(test_T, test_sigma, test_moneyness, test_models))
+parameters = list(product(test_T, test_sigma, test_moneyness, test_r, test_models))
 
 option_prices = pd.DataFrame(
-    index = pd.MultiIndex.from_tuples(parameters, names=['T', 'sigma', 'moneyness', 'model']),
-    columns=['option_price']
+    index = pd.MultiIndex.from_tuples(parameters, names=['T', 'sigma', 'moneyness', 'r', 'model']),
+    columns=['Model Profit', 'Binomial Profit', 'Lower', 'Upper', 'Absolute Error', 'Relative Error']
 )
 
-for T, sigma, moneyness, model in parameters:
+for T, sigma, moneyness, r, _ in parameters:
     K = S0 * (1 + moneyness/100)  
     d = compare_models(S0, r, sigma, T, K, n_trials, n_timesteps, option_type)
-    option_prices.loc[(T, sigma, moneyness, model), 'option_price'] = d[model][0]
+    binomial_price = binomial_tree(S0, r, sigma, T, K, n_timesteps, option_type)
+    for model in test_models:
+        model_price = d[model][0]
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Model Profit'] = model_price
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Binomial Profit'] = binomial_price
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Lower'] = d[model][1]
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Upper'] = d[model][2]
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Absolute Error'] = abs(model_price-binomial_price)
+        option_prices.loc[(T, sigma, moneyness, r, model), 'Relative Error'] = (model_price-binomial_price) / binomial_price * 100
 
-            
+model_metrics = pd.DataFrame(
+    index = test_models,
+    columns = ['RMSE', 'MAPE', 'poly p-value', 'random forest p-value', 'xgboost p-value', 'mlp p-value']
+)
 
+for model1 in test_models:
+    abs_error_data1 = option_prices.xs(model1, level='model')['Absolute Error']
+    rel_error_data1 = option_prices.xs(model1, level='model')['Relative Error']
+    n = len(abs_error_data1)
+    model_metrics.loc[model1, 'RMSE'] = np.sqrt(((abs_error_data1 ** 2).sum()) / n)
+    model_metrics.loc[model1, 'MAPE'] = (abs(rel_error_data1).sum()) / n
 
-print(option_prices)
+    for model2 in test_models:
+        abs_error_data2 = option_prices.xs(model2, level='model')['Absolute Error']
+        t_stat, p_value = stats.ttest_rel(abs_error_data1, abs_error_data2)
+        model_metrics.loc[model1, (model2 + ' p-value')] = p_value
+
+    
