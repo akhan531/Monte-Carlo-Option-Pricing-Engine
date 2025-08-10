@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 # Uses machine learning for regression and optimal stopping
 def longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, ml_model):
+    print("Running " + ml_model)
     S = np.zeros((n_trials, n_timesteps))
     S[:,0] = S0
     rng = np.random.default_rng(42)
@@ -101,48 +102,40 @@ def compare_models(S0, r, sigma, T, K, n_trials, n_timesteps, option_type):
     d = dict(zip(models,[longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, model) for model in models]))
     return d
 
-class TreeNode:
-    def __init__(self, val=0, left=None, right=None):
-        self.val = val
-        self.left = left
-        self.right = right
-
 def binomial_tree(S0, r, sigma, T, K, n_timesteps, option_type):
-    stock_prices = TreeNode(S0)
-    option_prices = TreeNode()
+    print("Running binomial tree")
+    stock_prices = [[S0]]
     dt = T / n_timesteps
     u = np.exp(sigma*np.sqrt(dt))
     d = 1/u
     p = (np.exp(r*dt) - d) / (u - d)
 
-    def fillTree(sRoot, oRoot, depth):
-        if depth == n_timesteps:
+    for t in range(1,n_timesteps):
+        new_prices = [ele*d for ele in stock_prices[-1]] + [S0* (u**t)]
+        stock_prices.append(new_prices)
+
+    if option_type == 'call':
+        option_prices = [max(ele - K, 0) for ele in stock_prices[-1]]
+    elif option_type == 'put':
+        option_prices = [max(K - ele, 0) for ele in stock_prices[-1]]
+
+    for t in range(n_timesteps-2,-1,-1):
+        current_prices = [0]*(t+1)
+        future_prices = option_prices
+        for i in range(t+1):
             if option_type == 'call':
-                oRoot.val = max(sRoot.val - K, 0)
+                exercise_val = max(stock_prices[t][i] - K, 0)
             elif option_type == 'put':
-                oRoot.val = max(K - sRoot.val, 0)
-            return
-        sRoot.left = TreeNode(sRoot.val*d)
-        sRoot.right = TreeNode(sRoot.val*u)
-        oRoot.left = TreeNode()
-        oRoot.right = TreeNode()
-        fillTree(sRoot.left, oRoot.left, depth+1)
-        fillTree(sRoot.right, oRoot.right, depth+1)
-        if option_type == 'call':
-            exercise_val = max(sRoot.val - K, 0)
-        elif option_type == 'put':
-            exercise_val = max(K - sRoot.val, 0)
-        expected_val = ((p * oRoot.right.val) + ((1-p) * oRoot.left.val)) * np.exp(-r*dt)
-        oRoot.val = max(exercise_val,expected_val);
+                exercise_val = max(K - stock_prices[t][i], 0)
+            expected_val = ((p * future_prices[i+1]) + ((1-p) * future_prices[i])) * np.exp(-r*dt)
+            current_prices[i] = max(exercise_val,expected_val);
+        option_prices = current_prices
 
-    fillTree(stock_prices, option_prices, 0)
 
-    return option_prices.val
+    return option_prices[0]
 
 
 
-    
-    
 
 
 
@@ -158,24 +151,30 @@ test_r = [0.01,0.03,0.05]
 test_models = ['poly', 'random forest', 'xgboost', 'mlp']
 
 parameters = list(product(test_T, test_sigma, test_moneyness, test_r, test_models))
+no_model_parameters = list(product(test_T, test_sigma, test_moneyness, test_r))
 
-option_prices = pd.DataFrame(
-    index = pd.MultiIndex.from_tuples(parameters, names=['T', 'sigma', 'moneyness', 'r', 'model']),
-    columns=['Model Profit', 'Binomial Profit', 'Lower', 'Upper', 'Absolute Error', 'Relative Error']
+'''option_prices = pd.DataFrame(
+    columns=['T', 'sigma', 'moneyness', 'r', 'model', 'Model Price', 'Binomial Price', 'Lower', 'Upper', 'Absolute Error', 'Relative Error']
 )
 
-for T, sigma, moneyness, r, _ in parameters:
+
+for T, sigma, moneyness, r in no_model_parameters:
     K = S0 * (1 + moneyness/100)  
     d = compare_models(S0, r, sigma, T, K, n_trials, n_timesteps, option_type)
     binomial_price = binomial_tree(S0, r, sigma, T, K, n_timesteps, option_type)
     for model in test_models:
+        print(T, sigma, moneyness, r, model)
         model_price = d[model][0]
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Model Profit'] = model_price
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Binomial Profit'] = binomial_price
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Lower'] = d[model][1]
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Upper'] = d[model][2]
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Absolute Error'] = abs(model_price-binomial_price)
-        option_prices.loc[(T, sigma, moneyness, r, model), 'Relative Error'] = (model_price-binomial_price) / binomial_price * 100
+        lower = d[model][1]
+        upper = d[model][2]
+        abs_error = abs(model_price-binomial_price)
+        rel_error = (model_price-binomial_price) / binomial_price * 100
+        option_prices.loc[len(option_prices)] = [T, sigma, moneyness, r, model, model_price, binomial_price, lower, upper, abs_error, rel_error]
+
+option_prices.to_csv('option_prices.csv')
+'''
+option_prices = pd.read_csv('option_prices.csv')
+
 
 model_metrics = pd.DataFrame(
     index = test_models,
@@ -183,15 +182,81 @@ model_metrics = pd.DataFrame(
 )
 
 for model1 in test_models:
-    abs_error_data1 = option_prices.xs(model1, level='model')['Absolute Error']
-    rel_error_data1 = option_prices.xs(model1, level='model')['Relative Error']
+    abs_error_data1 = option_prices[option_prices['model'] == model1]['Absolute Error']
+    rel_error_data1 = option_prices[option_prices['model'] == model1]['Relative Error']
     n = len(abs_error_data1)
     model_metrics.loc[model1, 'RMSE'] = np.sqrt(((abs_error_data1 ** 2).sum()) / n)
     model_metrics.loc[model1, 'MAPE'] = (abs(rel_error_data1).sum()) / n
 
     for model2 in test_models:
-        abs_error_data2 = option_prices.xs(model2, level='model')['Absolute Error']
+        abs_error_data2 = option_prices[option_prices['model'] == model2]['Absolute Error']
         t_stat, p_value = stats.ttest_rel(abs_error_data1, abs_error_data2)
         model_metrics.loc[model1, (model2 + ' p-value')] = p_value
 
-    
+#RMSE Comparison
+plt.bar(model_metrics.index, model_metrics['RMSE'])
+plt.title('RMSE for each model')
+plt.xlabel('Model')
+plt.ylabel('RMSE')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.show()  
+
+#MAPE Comparison
+plt.bar(model_metrics.index, model_metrics['MAPE'])
+plt.title('MAPE for each model')
+plt.xlabel('Model')
+plt.ylabel('MAPE')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.show() 
+
+#Performance by T
+for model in test_models:
+    x = test_T
+    abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['T'] == T)]['Absolute Error'] for T in test_T]
+    y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
+    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+plt.xlabel('Time to Expiration')
+plt.ylabel('RMSE')
+plt.title('Model performance across different time to expirations')
+plt.legend()  # Show legend
+plt.grid(True)  # Add gridlines
+plt.show()
+
+#Performance by sigma
+for model in test_models:
+    x = test_sigma
+    abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['sigma'] == sigma)]['Absolute Error'] for sigma in test_sigma]
+    y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
+    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+plt.xlabel('Volatility')
+plt.ylabel('RMSE')
+plt.title('Model performance across different volatilities')
+plt.legend()  # Show legend
+plt.grid(True)  # Add gridlines
+plt.show()
+
+#Performance by moneyness
+for model in test_models:
+    x = [S0 * (1 + moneyness/100) for moneyness in test_moneyness]
+    abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['moneyness'] == moneyness)]['Absolute Error'] for moneyness in test_moneyness]
+    y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
+    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+plt.xlabel('Strike Price')
+plt.ylabel('RMSE')
+plt.title('Model performance across different strike prices w S0 = 100')
+plt.legend()  # Show legend
+plt.grid(True)  # Add gridlines
+plt.show()
+
+#Performance by r
+for model in test_models:
+    x = test_r
+    abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['r'] == r)]['Absolute Error'] for r in test_r]
+    y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
+    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+plt.xlabel('Risk-Free interest rate')
+plt.ylabel('RMSE')
+plt.title('Model performance across different Risk-Free interest rates')
+plt.legend()  # Show legend
+plt.grid(True)  # Add gridlines
+plt.show()
