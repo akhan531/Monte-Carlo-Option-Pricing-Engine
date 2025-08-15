@@ -1,5 +1,4 @@
 import numpy as np
-from scipy import stats
 import xgboost as xgb
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
@@ -8,12 +7,16 @@ from sklearn.pipeline import make_pipeline
 from sklearn.neural_network import MLPRegressor
 from itertools import product
 import pandas as pd
+from scipy import stats
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 # Uses machine learning for regression and optimal stopping
 def longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, ml_model):
-    print("Running " + ml_model)
+    """
+    Core Longstaff-Schwartz implementation with ML models
+    """
     S = np.zeros((n_trials, n_timesteps))
     S[:,0] = S0
     rng = np.random.default_rng(42)
@@ -52,24 +55,13 @@ def longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, m
                 )
                 model.fit(X, y.ravel())
             case 'random forest':
-                model = RandomForestRegressor(
-                    n_estimators=200,  
-                    max_depth=5,         
-                    min_samples_leaf=10, 
-                    random_state=42
-                )
+                model = RandomForestRegressor()
                 model.fit(X, y.ravel())
             case 'xgboost':
                 model = xgb.XGBRegressor()
                 model.fit(X, y)
             case 'mlp':
-                model = MLPRegressor(
-                    hidden_layer_sizes=(64, 64),  
-                    activation='relu',
-                    solver='adam',
-                    max_iter=500,
-                    random_state=42
-                )
+                model = MLPRegressor()
                 model.fit(X, y.ravel())
             case _:
                 raise ValueError(f"Unknown model type: {ml_model}")
@@ -98,12 +90,14 @@ def longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, m
     return profit, lower, upper
 
 def compare_models(S0, r, sigma, T, K, n_trials, n_timesteps, option_type):
-    models = ['poly', 'random forest', 'xgboost', 'mlp'];
-    d = dict(zip(models,[longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, model) for model in models]))
-    return d
+    models = ['poly', 'random forest', 'xgboost', 'mlp']
+    results = {}
+    for model in models:
+        price, lower, upper = longstaff_schwartz(S0, r, sigma, T, K, n_trials, n_timesteps, option_type, model)
+        results[model] = (price, lower, upper)
+    return results
 
 def binomial_tree(S0, r, sigma, T, K, n_timesteps, option_type):
-    print("Running binomial tree")
     stock_prices = [[S0]]
     dt = T / n_timesteps
     u = np.exp(sigma*np.sqrt(dt))
@@ -209,17 +203,19 @@ plt.ylabel('MAPE')
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.show() 
 
+
+
 #Performance by T
 for model in test_models:
     x = test_T
     abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['T'] == T)]['Absolute Error'] for T in test_T]
     y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
-    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+    plt.plot(x, y, label=model, marker='o') 
 plt.xlabel('Time to Expiration')
 plt.ylabel('RMSE')
 plt.title('Model performance across different time to expirations')
-plt.legend()  # Show legend
-plt.grid(True)  # Add gridlines
+plt.legend() 
+plt.grid(True)  
 plt.show()
 
 #Performance by sigma
@@ -227,12 +223,12 @@ for model in test_models:
     x = test_sigma
     abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['sigma'] == sigma)]['Absolute Error'] for sigma in test_sigma]
     y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
-    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+    plt.plot(x, y, label=model, marker='o')  
 plt.xlabel('Volatility')
 plt.ylabel('RMSE')
 plt.title('Model performance across different volatilities')
-plt.legend()  # Show legend
-plt.grid(True)  # Add gridlines
+plt.legend()  
+plt.grid(True) 
 plt.show()
 
 #Performance by moneyness
@@ -240,12 +236,12 @@ for model in test_models:
     x = [S0 * (1 + moneyness/100) for moneyness in test_moneyness]
     abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['moneyness'] == moneyness)]['Absolute Error'] for moneyness in test_moneyness]
     y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
-    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+    plt.plot(x, y, label=model, marker='o')  
 plt.xlabel('Strike Price')
 plt.ylabel('RMSE')
 plt.title('Model performance across different strike prices w S0 = 100')
-plt.legend()  # Show legend
-plt.grid(True)  # Add gridlines
+plt.legend() 
+plt.grid(True)  
 plt.show()
 
 #Performance by r
@@ -253,10 +249,10 @@ for model in test_models:
     x = test_r
     abs_error_data = [option_prices[(option_prices['model'] == model) & (option_prices['r'] == r)]['Absolute Error'] for r in test_r]
     y = [np.sqrt(((ele ** 2).sum()) / len(ele)) for ele in abs_error_data]
-    plt.plot(x, y, label=model, marker='o')  # 'o' adds dots
+    plt.plot(x, y, label=model, marker='o')  
 plt.xlabel('Risk-Free interest rate')
 plt.ylabel('RMSE')
 plt.title('Model performance across different Risk-Free interest rates')
-plt.legend()  # Show legend
-plt.grid(True)  # Add gridlines
+plt.legend()  
+plt.grid(True) 
 plt.show()
